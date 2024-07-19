@@ -1,8 +1,29 @@
 import csv
+import time
 from github import Github
 import re
 
-def check_workflows(repo, pattern, results):
+def check_rate_limit(g):
+    """
+    Check the rate limit and handle if the limit is exceeded.
+    
+    Args:
+        g: GitHub object for API interactions.
+    """
+    rate_limit = g.get_rate_limit()
+    remaining = rate_limit.core.remaining
+    reset_time = rate_limit.core.reset
+    
+    if remaining == 0:
+        reset_timestamp = reset_time.timestamp()
+        current_timestamp = time.time()
+        wait_time = reset_timestamp - current_timestamp
+        
+        print(f"Rate limit exceeded. Waiting for {wait_time:.0f} seconds.")
+        if wait_time > 0:
+            time.sleep(wait_time + 10)  # Adding some buffer time
+
+def check_workflows(repo, pattern, results, g):
     """
     Check workflows in the given repository for the specified pattern.
     
@@ -10,6 +31,7 @@ def check_workflows(repo, pattern, results):
         repo: GitHub repository object.
         pattern: Compiled regular expression pattern to search for.
         results: List to store the results.
+        g: GitHub object for API interactions.
     """
     print(f"Checking workflows in repository: {repo.name}")
     try:
@@ -30,6 +52,9 @@ def check_workflows(repo, pattern, results):
                         'Line Number': None,  # Line number extraction is not handled here
                         'Match': pattern.search(workflow_file).group(0)
                     })
+                
+            # Check rate limit after processing each file
+            check_rate_limit(g)
     except Exception as e:
         print(f"Could not check workflows in {repo.name}: {e}")
 
@@ -48,7 +73,10 @@ def main():
 
     # Iterate over repositories in the organization
     for repo in organization.get_repos():
-        check_workflows(repo, pattern, results)
+        check_workflows(repo, pattern, results, g)
+        
+        # Check rate limit after processing each repository
+        check_rate_limit(g)
 
     # Write results to CSV
     with open('workflow_references.csv', 'w', newline='') as csvfile:
