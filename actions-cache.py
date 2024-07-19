@@ -2,20 +2,15 @@ import csv
 from github import Github
 import re
 
-# Replace 'your_access_token' with your GitHub Enterprise access token
-g = Github("your_access_token", base_url="https://your-github-enterprise-instance/api/v3")
-
-# Replace 'your_organization' with your GitHub organization
-organization = g.get_organization('your_organization')
-
-# Define the pattern to search for
-pattern = re.compile(r'actions/usage@[\w\.]+')
-
-# List to store results
-results = []
-
-# Function to check workflows for pattern
-def check_workflows(repo):
+def check_workflows(repo, pattern, results):
+    """
+    Check workflows in the given repository for the specified pattern.
+    
+    Args:
+        repo: GitHub repository object.
+        pattern: Compiled regular expression pattern to search for.
+        results: List to store the results.
+    """
     print(f"Checking workflows in repository: {repo.name}")
     try:
         # Check if the .github/workflows directory exists
@@ -38,17 +33,33 @@ def check_workflows(repo):
     except Exception as e:
         print(f"Could not check workflows in {repo.name}: {e}")
 
-# Iterate over repositories in the organization
-for repo in organization.get_repos():
-    check_workflows(repo)
+def main():
+    # Replace 'your_access_token' with your GitHub Enterprise access token
+    g = Github("your_access_token", base_url="https://your-github-enterprise-instance/api/v3")
 
-# Write results to CSV
-with open('workflow_references.csv', 'w', newline='') as csvfile:
-    fieldnames = ['Repository', 'File Path', 'Line Number', 'Match']
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    # Replace 'your_organization' with your GitHub organization
+    organization = g.get_organization('your_organization')
 
-    writer.writeheader()
-    for result in results:
-        writer.writerow(result)
+    # Define the pattern to search for
+    pattern = re.compile(r'actions/usage@[\w\.]+')
 
-print("Results have been written to workflow_references.csv")
+    # List to store results
+    results = []
+
+    # Iterate over repositories in the organization
+    for repo in organization.get_repos():
+        check_workflows(repo, pattern, results)
+
+    # Write results to CSV
+    with open('workflow_references.csv', 'w', newline='') as csvfile:
+        fieldnames = ['Repository', 'File Path', 'Line Number', 'Match']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for result in results:
+            writer.writerow(result)
+
+    print("Results have been written to workflow_references.csv")
+
+if __name__ == "__main__":
+    main()
