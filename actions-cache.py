@@ -1,6 +1,9 @@
 from github import Github
+from github.GithubException import UnknownObjectException
 import re
 import csv
+import time
+import yaml
 
 # Replace with your GitHub token and Enterprise URL if applicable
 GITHUB_TOKEN = 'your_github_token'
@@ -34,33 +37,72 @@ def write_to_csv(rows):
         for row in rows:
             writer.writerow(row)
 
+def parse_yaml(content):
+    try:
+        return yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        print(f"Error parsing YAML content: {exc}")
+        return None
+
+def check_cache_usage(yaml_data):
+    # Search for actions/cache usage in the YAML data
+    if yaml_data is None:
+        return 'No'
+    
+    for key, value in yaml_data.items():
+        if isinstance(value, dict):
+            if 'uses' in value and cache_regex.search(value['uses']):
+                return 'Yes'
+            if check_cache_usage(value):
+                return 'Yes'
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    if 'uses' in item and cache_regex.search(item['uses']):
+                        return 'Yes'
+                    if check_cache_usage(item):
+                        return 'Yes'
+    return 'No'
+
 def main():
     rows = []
     
     # Fetch repositories
-    org = g.get_organization(org_name)
-    repos = org.get_repos()
+    try:
+        org = g.get_organization(org_name)
+        repos = org.get_repos()
+    except UnknownObjectException as e:
+        print(f"Organization not found or accessible: {e}")
+        return
 
     # Iterate through repositories
     for repo in repos:
         check_rate_limit()
         
         # Fetch workflow files from the repository
-        contents = repo.get_contents(".github/workflows")
+        try:
+            contents = repo.get_contents(".github/workflows")
+        except UnknownObjectException as e:
+            print(f"Could not fetch contents for repo {repo.name}: {e}")
+            continue
         
         for content in contents:
             if content.type == "file":
                 check_rate_limit()
-                workflow_file = repo.get_contents(content.path)
-                file_content = workflow_file.decoded_content.decode("utf-8")
-                
-                # Search for actions/cache usage in the file content
-                uses_cache = 'Yes' if cache_regex.search(file_content) else 'No'
-                rows.append({
-                    'Repository': repo.name,
-                    'Workflow File': content.name,
-                    'Uses Cache': uses_cache
-                })
+                try:
+                    workflow_file = repo.get_contents(content.path)
+                    file_content = workflow_file.decoded_content.decode("utf-8")
+                    yaml_data = parse_yaml(file_content)
+                    
+                    # Check for actions/cache usage in the YAML data
+                    uses_cache = check_cache_usage(yaml_data)
+                    rows.append({
+                        'Repository': repo.name,
+                        'Workflow File': content.name,
+                        'Uses Cache': uses_cache
+                    })
+                except UnknownObjectException as e:
+                    print(f"Could not process file {content.path} in repo {repo.name}: {e}")
     
     write_to_csv(rows)
     print("Script execution completed. Check the github_actions_cache_usage.csv file for results.")
