@@ -1,6 +1,7 @@
 from github import Github
 import re
 import time
+import csv
 
 # Replace with your GitHub token
 GITHUB_TOKEN = 'your_github_token'
@@ -11,8 +12,8 @@ g = Github(GITHUB_TOKEN)
 # Specify the organization or user
 org_name = "your_org_or_user"
 
-# Regular expression to match cache usage
-cache_regex = re.compile(r'actions/cache@v\d+\.\d+\.\d+')
+# Regular expression to match any version of actions/cache
+cache_regex = re.compile(r'actions/cache@\d+\.\d+\.\d+|actions/cache@latest|actions/cache@\*')
 
 def check_rate_limit():
     rate_limit = g.get_rate_limit().core
@@ -24,8 +25,18 @@ def check_rate_limit():
         print(f"Rate limit reached. Sleeping for {sleep_time} seconds.")
         time.sleep(sleep_time)
 
-# Open the file to write the output
-with open('github_actions_cache_usage.txt', 'w') as file:
+def write_to_csv(rows):
+    with open('github_actions_cache_usage.csv', 'w', newline='') as csvfile:
+        fieldnames = ['Repository', 'Workflow', 'Job', 'Step', 'Uses Cache']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+def main():
+    rows = []
+    
     # Fetch repositories
     org = g.get_organization(org_name)
     repos = org.get_repos()
@@ -33,14 +44,12 @@ with open('github_actions_cache_usage.txt', 'w') as file:
     # Iterate through repositories
     for repo in repos:
         check_rate_limit()
-        file.write(f"Repository: {repo.name}\n")
         
         # Fetch workflows
         workflows = repo.get_workflows()
         
         for workflow in workflows:
             check_rate_limit()
-            file.write(f"  Workflow: {workflow.name}\n")
             
             # Fetch workflow runs
             runs = workflow.get_runs()
@@ -52,14 +61,19 @@ with open('github_actions_cache_usage.txt', 'w') as file:
                 
                 for job in jobs:
                     check_rate_limit()
-                    file.write(f"    Job: {job.name}\n")
-                    file.write(f"    Actions:\n")
                     
                     for step in job.steps:
-                        file.write(f"      - {step.name}\n")
-                        if cache_regex.search(step.name):
-                            file.write(f"        (Uses cache)\n")
+                        uses_cache = 'Yes' if cache_regex.search(step.name) else 'No'
+                        rows.append({
+                            'Repository': repo.name,
+                            'Workflow': workflow.name,
+                            'Job': job.name,
+                            'Step': step.name,
+                            'Uses Cache': uses_cache
+                        })
+    
+    write_to_csv(rows)
+    print("Script execution completed. Check the github_actions_cache_usage.csv file for results.")
 
-        file.write("\n")
-
-print("Script execution completed. Check the github_actions_cache_usage.txt file for results.")
+if __name__ == "__main__":
+    main()
