@@ -1,13 +1,13 @@
 from github import Github
 import re
-import time
 import csv
 
-# Replace with your GitHub token
+# Replace with your GitHub token and Enterprise URL if applicable
 GITHUB_TOKEN = 'your_github_token'
+GITHUB_ENTERPRISE_URL = 'https://your-enterprise-url.com/api/v3'  # Optional for GitHub Enterprise
 
 # Initialize GitHub API client
-g = Github(GITHUB_TOKEN)
+g = Github(GITHUB_TOKEN, base_url=GITHUB_ENTERPRISE_URL if GITHUB_ENTERPRISE_URL else None)
 
 # Specify the organization or user
 org_name = "your_org_or_user"
@@ -27,7 +27,7 @@ def check_rate_limit():
 
 def write_to_csv(rows):
     with open('github_actions_cache_usage.csv', 'w', newline='') as csvfile:
-        fieldnames = ['Repository', 'Workflow', 'Job', 'Step', 'Uses Cache']
+        fieldnames = ['Repository', 'Workflow File', 'Uses Cache']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
         writer.writeheader()
@@ -45,32 +45,22 @@ def main():
     for repo in repos:
         check_rate_limit()
         
-        # Fetch workflows
-        workflows = repo.get_workflows()
+        # Fetch workflow files from the repository
+        contents = repo.get_contents(".github/workflows")
         
-        for workflow in workflows:
-            check_rate_limit()
-            
-            # Fetch workflow runs
-            runs = workflow.get_runs()
-            
-            for run in runs:
+        for content in contents:
+            if content.type == "file":
                 check_rate_limit()
-                # Fetch run jobs
-                jobs = run.get_jobs()
+                workflow_file = repo.get_contents(content.path)
+                file_content = workflow_file.decoded_content.decode("utf-8")
                 
-                for job in jobs:
-                    check_rate_limit()
-                    
-                    for step in job.steps:
-                        uses_cache = 'Yes' if cache_regex.search(step.name) else 'No'
-                        rows.append({
-                            'Repository': repo.name,
-                            'Workflow': workflow.name,
-                            'Job': job.name,
-                            'Step': step.name,
-                            'Uses Cache': uses_cache
-                        })
+                # Search for actions/cache usage in the file content
+                uses_cache = 'Yes' if cache_regex.search(file_content) else 'No'
+                rows.append({
+                    'Repository': repo.name,
+                    'Workflow File': content.name,
+                    'Uses Cache': uses_cache
+                })
     
     write_to_csv(rows)
     print("Script execution completed. Check the github_actions_cache_usage.csv file for results.")
