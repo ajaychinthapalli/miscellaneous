@@ -1,11 +1,10 @@
 from github import Github
 import requests
-import json
 
 def initialize_github_client(token, base_url):
-    return Github(base_url=base_url, login_or_token=token)
+    return Github(base_url=base_url, login_or_token=token), base_url
 
-def fetch_cache_keys(org_name, client, headers, output_file):
+def fetch_cache_keys(org_name, client, base_url, headers, output_file):
     org = client.get_organization(org_name)
     repos = org.get_repos()
 
@@ -15,7 +14,7 @@ def fetch_cache_keys(org_name, client, headers, output_file):
             repo_name = repo.name
             
             # Fetch cache usage by repository
-            cache_usage_url = f"{client.base_url}/orgs/{org_name}/actions/cache/usage-by-repository"
+            cache_usage_url = f"{base_url}/orgs/{org_name}/actions/cache/usage-by-repository"
             response = requests.get(cache_usage_url, headers=headers)
             
             if response.status_code == 200:
@@ -23,7 +22,7 @@ def fetch_cache_keys(org_name, client, headers, output_file):
                 for usage in cache_usages['repositories']:
                     if usage['repository']['full_name'] == f"{owner}/{repo_name}":
                         # Fetch GitHub Actions caches for the repository
-                        cache_url = f"{client.base_url}/repos/{owner}/{repo_name}/actions/caches"
+                        cache_url = f"{base_url}/repos/{owner}/{repo_name}/actions/caches"
                         cache_response = requests.get(cache_url, headers=headers)
                         
                         if cache_response.status_code == 200:
@@ -49,7 +48,9 @@ def read_and_delete_cache_keys(filename, headers, base_url):
     with open(filename, 'r') as file:
         for line in file:
             repo_name, cache_key = line.strip().split(',')
-            delete_caches(your_repo_owner, repo_name, [cache_key], headers, base_url)
+            # Assuming repo_owner is derived from org_name (assuming all repos are under the same org)
+            repo_owner = org_name
+            delete_caches(repo_owner, repo_name, [cache_key], headers, base_url)
 
 def main():
     # GitHub Enterprise settings
@@ -58,11 +59,11 @@ def main():
     org_name = "your_org_name"
     output_file = "cache_keys.txt"
 
-    client = initialize_github_client(token, base_url)
+    client, base_url = initialize_github_client(token, base_url)
     headers = {"Authorization": f"token {token}"}
 
     # Fetch and save cache keys
-    fetch_cache_keys(org_name, client, headers, output_file)
+    fetch_cache_keys(org_name, client, base_url, headers, output_file)
 
     # Read cache keys from the file and delete them
     read_and_delete_cache_keys(output_file, headers, base_url)
